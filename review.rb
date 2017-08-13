@@ -124,6 +124,17 @@ firewalld_interface 'em1' do
     firewall_action 'accept'
 end
 
+firewalld_port '9000/tcp' do
+  action :add
+  zone 'public'
+end
+
+firewalld_port '80/tcp' do
+  action :add
+  zone 'public'
+end
+
+
 service 'sonarqube' do
   supports restart: true, reload: false, status: true
   action node['bbt_sonarqube']['services']['sonarqube'] ? [:enable, :start] : [:disable, :stop]
