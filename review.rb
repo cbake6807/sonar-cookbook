@@ -44,22 +44,24 @@ end
 
 package 'unzip'
 
-# FIXME This is not idempotent, causing unzips every time chef client runs.
-# Perhaps trigger this after the remote_file download using a notification.
-bash 'unzip installation' do
-  code <<-EOF
-    unzip #{sq_zip_location} -d /opt/sonar/
-    chown -R #{sq_user}:#{sq_group} /opt/sonar/sonarqube-#{sq_version}
-EOF
-  not_if { ::File.exist?(sq_runscript) }
-end
-
+# ensure directory exists before unzipping
 directory sq_config_dir do
   recursive true
   mode '0744'
   owner sq_user
   group sq_group
   # TODO Add a before notification to trigger zip file download and unzip.
+end
+
+# FIXME This is not idempotent, causing unzips every time chef client runs.
+# Perhaps trigger this after the remote_file download using a notification.
+bash 'unzip installation' do
+  code <<-EOF
+    if [ ! -d "/opt/sonar/sonarqube-#{sq_version}" ]; then
+      unzip #{sq_zip_location} -d /opt/sonar/
+      chown -R #{sq_user}:#{sq_group} /opt/sonar/sonarqube-#{sq_version}
+    fi
+  EOF
 end
 
 # softlink for managing sonarqube
@@ -107,19 +109,19 @@ end
 node['bbt_sonarqube']['sonar_plugins'].each do |pkg|
   remote_file "/opt/sonar/sonarqube-5.6.6/extensions/plugins/#{pkg}" do
     source "https://artifactory.bbtnet.com/artifactory/jenkins-tools/#{pkg}"
-    action :create
     owner sq_user
     group sq_group
+    action :create_if_missing # download only if missing
     # TODO: Add a mode that prevents other users from writing or executing this file.
   end
 end
 
 firewalld_interface 'em1' do
-        action :add
-        zone   'public'
-        port_number 9000
-        port_protocol 'tcp'
-        firewall_action 'accept'
+    action :add
+    zone   'public'
+    port_number 9000
+    port_protocol 'tcp'
+    firewall_action 'accept'
 end
 
 service 'sonarqube' do
