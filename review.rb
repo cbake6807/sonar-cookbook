@@ -36,9 +36,10 @@ remote_file 'Download remote file' do
   path sq_zip_location
   source node['bbt_sonarqube']['sonarqube_file']
   mode '0644'
-  # TODO Add checksum (sha256)
+  # enter md5 checksum here
+  #checksum "123456789123456789"
   # TODO Enable useetag and use conditional get should be true.
-  action :create
+  action :create_if_missing # download only if missing
 end
 
 package 'unzip'
@@ -113,13 +114,12 @@ node['bbt_sonarqube']['sonar_plugins'].each do |pkg|
   end
 end
 
-# FIXME This is not idempotent. Use the firewalld cookbook resource, which we are using in other cookbooks instead.
-bash 'Enable firewall rule for 9000' do
-  user 'root'
-   code <<-EOF
-    firewall-cmd --zone=public --add-port=9000/tcp --permanent
-    firewall-cmd --reload
-EOF
+firewalld_interface 'em1' do
+        action :add
+        zone   'public'
+        port_number 9000
+        port_protocol 'tcp'
+        firewall_action 'accept'
 end
 
 service 'sonarqube' do
