@@ -47,16 +47,8 @@ remote_file 'Download_Remote_File' do
   checksum node['bbt_sonarqube']['remotefile_checksum']
   use_etag true
   use_conditional_get true
+  action :create_if_missing
   notifies :run, 'bash[Unzip_Installation]', :immediately
-end
-
-# unzip sonarqube zip file
-bash 'Unzip_Installation' do
-  code <<-EOF
-    unzip #{sq_zip_location} -d /opt/sonar/
-    chown -R #{sq_user}:#{sq_group} /opt/sonar/sonarqube-#{sq_version}
-EOF
-    action :nothing
 end
 
 # creates directory
@@ -67,6 +59,17 @@ directory sq_config_dir do
   group sq_group
   not_if { Dir.exists?(sq_config_dir) }
   notifies :create, 'remote_file[Download_Remote_File]', :before
+end
+
+# unzip sonarqube zip file
+bash 'Unzip_Installation' do
+  code <<-EOF
+    if [ ! -d "/opt/sonar/sonarqube-#{sq_version}" ]; then
+      unzip #{sq_zip_location} -d /opt/sonar/
+      chown -R #{sq_user}:#{sq_group} /opt/sonar/sonarqube-#{sq_version}
+    fi
+  EOF
+  action :nothing
 end
 
 
@@ -88,18 +91,17 @@ template 'sonarqube_init.d' do
 end
 
 if File.exist?('/etc/chef/encrypted_data_bag_secret')
-secret = Chef::EncryptedDataBagItem.load_secret("/etc/chef/encrypted_data_bag_secret")
-item = Chef::EncryptedDataBagItem.load('role_sonarqube', 'sonar_credentials', secret)
+  secret = Chef::EncryptedDataBagItem.load_secret("/etc/chef/encrypted_data_bag_secret")
+  item = Chef::EncryptedDataBagItem.load('role_sonarqube', 'sonar_credentials', secret)
 
-item['certs'].each do |cert|
-file "/etc/httpd/conf.d/#{cert['filename']}" do
-  content cert['data']
-  owner 'root'
-#  verify { secret != false } # dont execute template block if databag is missing encrypted_data_bag_secret
-  not_if { File.exist?("/etc/httpd/conf.d/#{cert['filename']}") }
-  notifies :create, 'template[httpd.conf]', :immediately
+  item['certs'].each do |cert|
+    file "/etc/httpd/conf.d/#{cert['filename']}" do
+      content cert['data']
+      owner 'root'
+      not_if { File.exist?("/etc/httpd/conf.d/#{cert['filename']}") }
+      notifies :create, 'template[httpd.conf]', :immediately
+    end
   end
- end
 end
 
 
@@ -149,8 +151,6 @@ template 'httpd.conf' do
     proxypass_reverse: proxypass_reverse
   )
   action :create
-  #notifies :reload, 'service[httpd]', :delayed
-  #verify { secret != false } # dont execute template block if databag is missing
 end
 
 # sonar.properties template
@@ -180,7 +180,7 @@ end
 node['bbt_sonarqube']['sonar_plugins'].each do |pkg|
   remote_file "/opt/sonar/sonarqube-5.6.6/extensions/plugins/#{pkg}" do
     source "https://artifactory.bbtnet.com/artifactory/jenkins-tools/#{pkg}"
-    action :create
+    action :create_if_missing
     owner sq_user
     group sq_group
     mode '0644'
@@ -200,7 +200,7 @@ end
 
 # restart apache if conf file changed
 service 'httpd' do
-   subscribes :reload, 'file[/etc/httpd/conf/httpd.conf]', :immediately
+   subscribes :reload, 'file[/etc/httpd/conf/httpd.conf]', :delayed
 end
 
 # starts sonarqube service
